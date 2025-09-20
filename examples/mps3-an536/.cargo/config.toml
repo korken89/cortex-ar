@@ -1,0 +1,10 @@
+[build]
+target = "armv8r-none-eabihf"
+
+[target.armv8r-none-eabihf]
+# Note, this requires QEMU 9 or higher
+runner = "qemu-system-arm -machine mps3-an536 -cpu cortex-r52 -semihosting -nographic -audio none -kernel"
+
+[unstable]
+# build-std = ["core", "alloc"]
+build-std = ["core"]

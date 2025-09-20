@@ -27,8 +27,10 @@ heapless = "0.9.1"
 arm-targets = {version = "0.3.0", path = "../../arm-targets"}
 
 [features]
+default = ["gic"]
+
 eabi-fpu = ["cortex-r-rt/eabi-fpu"]
-gic = ["arm-gic"]
+gic = ["dep:arm-gic"]
 
 [[bin]]
 name = "gic-map"
