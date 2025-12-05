@@ -3,6 +3,8 @@
 #![no_std]
 #![no_main]
 
+use core::sync::atomic::{compiler_fence, Ordering};
+
 use aarch32_rt::{entry, irq};
 use arm_gic::{
     gicv3::{GicCpuInterface, Group, InterruptGroup, SgiTarget, SgiTargetGroup},
@@ -126,31 +128,48 @@ fn high_prio() {
 fn low_prio() {
     println!("    - Low prio!");
 
-    priority_ceiling_lock(|| {
-        GicCpuInterface::send_sgi(
-            SGI_INTID_HI,
-            SgiTarget::List {
-                affinity3: 0,
-                affinity2: 0,
-                affinity1: 0,
-                target_list: 0b1,
-            },
-            SgiTargetGroup::CurrentGroup1,
-        )
-        .unwrap();
-        println!("    - Pre lock exit");
-        println!("    - HIGH PRIO SHOULD RUN AFTER THIS");
-    });
+    lock(
+        || {
+            GicCpuInterface::send_sgi(
+                SGI_INTID_HI,
+                SgiTarget::List {
+                    affinity3: 0,
+                    affinity2: 0,
+                    affinity1: 0,
+                    target_list: 0b1,
+                },
+                SgiTargetGroup::CurrentGroup1,
+            )
+            .unwrap();
+            println!("    - Pre lock exit");
+            println!("    - HIGH PRIO SHOULD RUN AFTER THIS");
+            println!("-----------------------------------------");
+        },
+        HIGH_PRIORITY,
+    );
+    println!("-----------------------------------------");
     println!("    - HIGH PRIO SHOULD RUN BEFORE THIS");
     println!("    - Post lock exit");
 }
 
-fn priority_ceiling_lock<F: FnMut()>(mut f: F) {
-    let prio = GicCpuInterface::get_priority_mask();
-    // Block everything up to, and including, `HIGH_PRIORITY`
-    GicCpuInterface::set_priority_mask(HIGH_PRIORITY);
+#[inline]
+pub fn lock<F, R>(f: F, ceiling: u8) -> R
+where
+    F: FnOnce() -> R,
+{
+    let current = GicCpuInterface::get_priority_mask();
 
-    f();
+    if ceiling < current {
+        GicCpuInterface::set_priority_mask(ceiling);
+        // ISB ensures the priority mask is effective before entering critical section.
+        unsafe { core::arch::asm!("isb", options(nostack)) };
+    }
 
-    GicCpuInterface::set_priority_mask(prio);
+    compiler_fence(Ordering::SeqCst);
+    let r = f();
+    compiler_fence(Ordering::SeqCst);
+
+    GicCpuInterface::set_priority_mask(current);
+
+    r
 }
